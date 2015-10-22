@@ -1,0 +1,11 @@
+"Leddigits1" 0000 0000 10 10
+"iLeddigits1" 1000 0001 10 10
+"Image1" B000 000B 00 00
+"Image2" 0400 000E 00 00
+"Gauge1" 5A00 0010 B0 10
+"Image3" 4C00 0061 01 00
+"Leddigits2" A400 0063 84 AC
+"iLeddigits2" C600 0063 84 AC
+"Leddigits3" 0800 0064 08 AC
+"iLeddigits3" 1C00 0064 08 AC
+"Image4" 5E00 0064 00 00

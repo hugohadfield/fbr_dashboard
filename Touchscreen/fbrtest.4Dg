@@ -1,0 +1,344 @@
+#platform "uLCD-32PTU"
+
+// Program Skeleton 1.2 generated 18/06/2015 18:16:08
+
+#inherit "4DGL_16bitColours.fnc"
+
+#inherit "VisualConst.inc"
+
+#inherit "fbrtestConst.inc"
+
+#inherit "LedDigitsDisplay.inc"
+
+// The various definitions of pins etc
+#CONST
+
+OIL_LED BUS_6
+OVERTRAVEL_LED BUS_5
+OVERHEAT_LED BUS_4
+WUE_LED BUS_3
+LOGGING_LED BUS_2
+NEUTRAL_LED BUS_1
+
+BAUDRATE BAUD_9600
+RACEMODE 0
+WARMUPMODE 1
+ERRORMODE 2
+INITMODE 3
+DEBUGMODE 4
+MAXREVS 12800
+GLOBALTIMEOUT 4
+#END
+
+var pac[4]; // This is a global placeholder for the packet that we recieve from the datalogger
+var uistate := INITMODE;
+var laststate := INITMODE;
+var gear := 0;
+var buf[210];
+
+func led_on(var pin)
+    pin_HI(pin);
+endfunc
+
+func led_off(var pin)
+    pin_LO(pin);
+endfunc
+
+func init_gpio()
+
+    bus_Set(0xE3);
+    bus_Out(0x00);
+
+endfunc
+
+func setup_uart()
+    com_SetBaud(COM0, 960);
+endfunc
+
+func get_checksum(var timeout)
+    var c1 := -1;
+    var c2 := -1;
+     while( (c1 := serin() ) < 0);
+     while( (c2 := serin() ) == -1);
+     var c := 0;
+     c := (c1 << 8) | c2;
+     return c ;
+endfunc
+
+
+func get_char(var timeout)
+
+    var c;
+    c := -1;
+    var tstart;
+    tstart := sys_T();
+    var tend;
+    tend := tstart + timeout;
+    while( ((c := serin()) < 0) &  ( sys_T() < tend )  );
+    return c;
+
+endfunc
+
+
+func get_packet(var timeout)
+
+    pac[0] := [-1,-1,-1,-1];
+
+    pac[0] := get_char(timeout);
+    if (pac[0] < 0)
+        return 0;
+    endif
+
+    pac[1] := get_char(timeout);
+    if (pac[1] < 0)
+        return 0;
+    endif
+
+    pac[2] := get_char(timeout);
+    if (pac[2] < 0)
+        return 0;
+    endif
+
+    pac[3] := get_char(timeout);
+    if (pac[3] < 0)
+        return 0;
+    endif
+
+    return 1;
+
+endfunc
+
+
+func process_status(var status)
+
+     uistate := RACEMODE;
+
+    if( status & 0x4)
+         uistate := WARMUPMODE;
+         led_on(WUE_LED);
+    else
+         led_off(WUE_LED);
+    endif
+
+    if( status & 0x8)
+         led_on(LOGGING_LED);
+    else
+         led_off(LOGGING_LED);
+    endif
+
+    if( status & 0x2)
+         led_on(OVERTRAVEL_LED);
+         uistate := ERRORMODE;
+    else
+         led_off(OVERTRAVEL_LED);
+    endif
+
+    if( status & 0x1)
+         led_on(OVERHEAT_LED);
+         uistate := ERRORMODE;
+    else
+         led_off(OVERHEAT_LED);
+    endif
+
+endfunc
+
+func process_gear(var wspeed, var revs)
+
+      var ratio;
+      if (wspeed != 0)
+        ratio := revs / wspeed;
+      else
+         ratio := 1000;
+      endif
+
+      //print (ratio);
+      switch
+      case( ratio > 25)
+           gear := 0;
+        break;
+      case( ratio > 16)
+           gear := 1;
+        break;
+      case( ratio > 12)
+           gear := 2;
+        break;
+      case( ratio > 9.5)
+           gear := 3;
+        break;
+        case( ratio > 8.75)
+           gear := 4;
+        break;
+        case( ratio > 7.85)
+           gear := 5;
+        break;
+        case( ratio < 7.85)
+           gear := 6;
+        break;
+
+        //TODO add in cut offs for the various gears
+      endswitch
+
+endfunc
+
+func draw_race()
+    img_Show(hndl, iLeddigits1);
+    img_Show(hndl, iGauge1) ;
+endfunc
+
+func draw_error()
+    img_Show(hndl,iImage2) ;
+endfunc
+
+func draw_warmup()
+    img_Show(hndl,iImage3) ;
+    img_Show(hndl, iLeddigits2);
+    img_Show(hndl, iLeddigits3);  // show all digits at 0, only do this once
+endfunc
+
+func draw_init()
+    img_Show(hndl,iImage4) ;
+endfunc
+
+func draw_debug()
+
+endfunc
+
+func process_packet(var checksum)
+
+    var testsum := 0;
+    testsum := ( pac[0] + pac[1] + pac[2] + pac[3] ) ;
+
+  if( checksum ==  testsum)
+        process_status(pac[0]);
+        process_gear(pac[1], pac[2]);
+        update_state();
+  else
+        print("checksum error" );
+        print(checksum);
+        print (" ");
+        print(testsum);
+        print ("   ");
+        print(pac[0]);
+        print (" ");
+        print(pac[1]);
+        print (" ");
+        print(pac[2]);
+        print (" ");
+        print(pac[3]);
+        print ("\n");
+
+  endif
+
+endfunc
+
+func update_state()
+
+switch
+    case(uistate == RACEMODE)
+        ledDigitsDisplay(gear, iLeddigits1+1, 16, 1, 1, 174, 0) ;
+        img_SetWord(hndl, iGauge1, IMAGE_INDEX, (100*pac[2]/128) ) ;
+        img_Show(hndl, iGauge1) ;
+    break;
+    case(uistate == WARMUPMODE)
+        var temp;
+        temp := pac[3];
+        ledDigitsDisplay(temp, iLeddigits3+1, 8, 3, 1, 25, 1) ;
+        var realrevs;
+        realrevs := (100*pac[2]);
+        ledDigitsDisplay(realrevs, iLeddigits2+1, 132, 5, 1, 24, 1) ;
+
+    break;
+    case(uistate == ERRORMODE)
+    // Nothing to do here
+    break;
+    case(uistate == INITMODE)
+        draw_init();
+        pause(5000);
+    break;
+
+    case(uistate == DEBUGMODE)
+    break;
+
+endswitch
+
+
+
+endfunc
+
+func draw_state()
+    gfx_Cls();
+switch
+    case(uistate == RACEMODE)
+    draw_race();
+    break;
+    case(uistate == WARMUPMODE)
+    draw_warmup();
+    break;
+    case(uistate == ERRORMODE)
+    draw_error();
+    break;
+    case(uistate == INITMODE)
+    draw_init();
+    break;
+    case(uistate == DEBUGMODE)
+    draw_debug();
+    break;
+endswitch
+
+endfunc
+
+
+func main()
+
+
+    gfx_ScreenMode(LANDSCAPE_R);
+
+
+//  var hstrings ; // Handle to access uSD strings, uncomment if required
+//  var hFontx ;   // Handle to access uSD fonts, uncomment if required and change n to font number
+//  Uncomment the following if uSD images, fonts or strings used.
+
+    putstr("Mounting...\n");
+    if (!(file_Mount()))
+        while(!(file_Mount()))
+            putstr("Drive not mounted...");
+            pause(200);
+            gfx_Cls();
+            pause(200);
+        wend
+    endif
+//    gfx_TransparentColour(0x0020);    // uncomment if transparency required
+//    gfx_Transparency(ON);             // uncomment if transparency required
+
+//  hFontn := file_LoadImageControl("fbrtest.dan", "fbrtest.gcn", 1); // Open handle to access uSD fonts, uncomment if required and change n to font number dropping a and c if > 9
+//  hstrings := file_Open("fbrtest.txf", 'r') ; // Open handle to access uSD strings, uncomment if required
+    hndl := file_LoadImageControl("fbrtest.dat", "fbrtest.gci", 1);
+
+    setup_uart();
+    init_gpio();
+    print("hardware setup complete");
+    draw_state();
+
+    var sum;
+    var gear;
+    var c;
+    repeat
+        laststate := uistate;
+
+        if (uistate != DEBUGMODE)
+            sum := get_checksum(2);
+            if (get_packet(GLOBALTIMEOUT))
+                process_packet(sum);
+                if (uistate != laststate)
+                   draw_state();
+                endif
+            endif
+            pause(10);
+        else
+            while( (c := serin() )< 0);
+            print( c);
+        endif
+
+    forever
+
+endfunc
