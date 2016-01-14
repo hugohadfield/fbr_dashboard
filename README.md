@@ -1,7 +1,10 @@
 # fbr_dashboard
 
-To work on the Touchscreen software you will need this:
+Touchscreen firmware IDE:
 http://www.4dsystems.com.au/product/4D_Workshop_4_IDE/
+More info:
+http://www.4dsystems.com.au/product/uLCD_32PTU/
+
 
 To work with the sensors these links will get you most of the important stuff:
 http://www.phidgets.com/docs/Operating_System_Support
